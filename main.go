@@ -49,6 +49,8 @@ const (
 	GenerateOk  MsgType = "generate_ok"
 	Broadcast   MsgType = "broadcast"
 	BroadcastOk MsgType = "broadcast_ok"
+	Read        MsgType = "read"
+	ReadOk      MsgType = "read_ok"
 )
 
 type GenerateMsgBody struct {
@@ -92,4 +94,13 @@ func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	}
 	m.broadcastMsgs = append(m.broadcastMsgs, body.Msg)
 	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
+}
+
+type ReadOkMsgBody struct {
+	Type MsgType `json:"type"`
+	Msgs []int   `json:"messages"`
+}
+
+func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
+	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.broadcastMsgs})
 }
