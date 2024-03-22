@@ -32,23 +32,6 @@ func main() {
 	}
 }
 
-type Generate string
-
-const (
-	GenerateIncoming Generate = "generate"
-	GenerateReply    Generate = "generate_ok"
-)
-
-type GenerateMsgBody struct {
-	Type  Generate `json:"type"`
-	MsgId int64    `json:"msg_id"`
-}
-
-type ReplyGenerateMsgBody struct {
-	Type Generate `json:"type"`
-	Id   string   `json:"id"`
-}
-
 type MessageManager struct {
 	n *maelstrom.Node
 }
@@ -57,20 +40,35 @@ func New(n *maelstrom.Node) MessageManager {
 	return MessageManager{n: n}
 }
 
+type GenerateMsgBody struct {
+	MsgId int `json:"msg_id"`
+}
+
+type MsgType string
+
+const (
+	GenerateIncoming MsgType = "generate"
+	GenerateReply    MsgType = "generate_ok"
+)
+
+type ReplyGenerateMsgBody struct {
+	Type MsgType `json:"type"`
+	Id   string  `json:"id"`
+}
+
 func (m *MessageManager) HandleGenerateId(msg maelstrom.Message) error {
-	src := msg.Src
 	body := &GenerateMsgBody{}
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
 
-	var out bytes.Buffer
-	out.WriteString(src)
-	out.WriteString(strconv.Itoa(int(body.MsgId)))
+	var Id bytes.Buffer
+	Id.WriteString(msg.Src)
+	Id.WriteString(strconv.Itoa(body.MsgId))
 
 	replyBody := &ReplyGenerateMsgBody{
 		Type: GenerateReply,
-		Id:   out.String(),
+		Id:   Id.String(),
 	}
 	return m.n.Reply(msg, replyBody)
 }
