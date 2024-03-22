@@ -26,6 +26,7 @@ func main() {
 	})
 
 	n.Handle("generate", manager.HandleGenerateId)
+	n.Handle("broadcast", manager.HandleBroadcast)
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
@@ -73,4 +74,21 @@ func (m *MessageManager) HandleGenerateId(msg maelstrom.Message) error {
 		Id:   Id.String(),
 	}
 	return m.n.Reply(msg, replyBody)
+}
+
+type BroadcastMsgBody struct {
+	Msg int `json:"message"`
+}
+
+type BroadcastOkMsgBody struct {
+	Type MsgType `json:"type"`
+}
+
+func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
+	body := &BroadcastMsgBody{}
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+	// TODO: store the value
+	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
 }
