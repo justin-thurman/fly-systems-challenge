@@ -34,11 +34,12 @@ func main() {
 }
 
 type MessageManager struct {
-	n *maelstrom.Node
+	n             *maelstrom.Node
+	broadcastMsgs []int
 }
 
 func New(n *maelstrom.Node) MessageManager {
-	return MessageManager{n: n}
+	return MessageManager{n: n, broadcastMsgs: make([]int, 0)}
 }
 
 type MsgType string
@@ -89,6 +90,6 @@ func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
-	// TODO: store the value
+	m.broadcastMsgs = append(m.broadcastMsgs, body.Msg)
 	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
 }
