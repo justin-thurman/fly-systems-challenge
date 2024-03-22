@@ -8,8 +8,6 @@ import (
 )
 
 func main() {
-	print("Here we go!")
-
 	n := maelstrom.NewNode()
 
 	n.Handle("echo", func(msg maelstrom.Message) error {
