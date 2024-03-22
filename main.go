@@ -27,6 +27,8 @@ func main() {
 
 	n.Handle("generate", manager.HandleGenerateId)
 	n.Handle("broadcast", manager.HandleBroadcast)
+	n.Handle("read", manager.HandleRead)
+	n.Handle("topology", manager.HandleTopology)
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
@@ -51,6 +53,8 @@ const (
 	BroadcastOk MsgType = "broadcast_ok"
 	Read        MsgType = "read"
 	ReadOk      MsgType = "read_ok"
+	Topology    MsgType = "topology"
+	TopologyOk  MsgType = "topology_ok"
 )
 
 type GenerateMsgBody struct {
@@ -103,4 +107,12 @@ type ReadOkMsgBody struct {
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
 	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.broadcastMsgs})
+}
+
+type TopologyOkMsgBody struct {
+	Type MsgType `json:"type"`
+}
+
+func (m *MessageManager) HandleTopology(msg maelstrom.Message) error {
+	return m.n.Reply(msg, &TopologyOkMsgBody{Type: TopologyOk})
 }
