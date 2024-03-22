@@ -40,18 +40,20 @@ func New(n *maelstrom.Node) MessageManager {
 	return MessageManager{n: n}
 }
 
+type MsgType string
+
+const (
+	Generate    MsgType = "generate"
+	GenerateOk  MsgType = "generate_ok"
+	Broadcast   MsgType = "broadcast"
+	BroadcastOk MsgType = "broadcast_ok"
+)
+
 type GenerateMsgBody struct {
 	MsgId int `json:"msg_id"`
 }
 
-type MsgType string
-
-const (
-	GenerateIncoming MsgType = "generate"
-	GenerateReply    MsgType = "generate_ok"
-)
-
-type ReplyGenerateMsgBody struct {
+type GenerateOkMsgBody struct {
 	Type MsgType `json:"type"`
 	Id   string  `json:"id"`
 }
@@ -66,8 +68,8 @@ func (m *MessageManager) HandleGenerateId(msg maelstrom.Message) error {
 	Id.WriteString(msg.Src)
 	Id.WriteString(strconv.Itoa(body.MsgId))
 
-	replyBody := &ReplyGenerateMsgBody{
-		Type: GenerateReply,
+	replyBody := &GenerateOkMsgBody{
+		Type: GenerateOk,
 		Id:   Id.String(),
 	}
 	return m.n.Reply(msg, replyBody)
