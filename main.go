@@ -94,19 +94,18 @@ type BroadcastOkMsgBody struct {
 	Type MsgType `json:"type"`
 }
 
-// TODO: I'm ending up with a ton of broadcast 0 messages. Not sure why.
 func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	body := &BroadcastMsgBody{}
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
 	for _, node := range m.neighbors {
+		if node == msg.Src {
+			continue
+		}
 		err := m.n.Send(node, body)
 		if err != nil {
 			return err
-		}
-		if node == msg.Src {
-			continue
 		}
 	}
 	m.seenMsgs = append(m.seenMsgs, body.Msg)
