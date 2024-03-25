@@ -37,9 +37,9 @@ func main() {
 }
 
 type MessageManager struct {
-	n             *maelstrom.Node
-	seenMsgs      []int
-	neighbors     []string
+	n         *maelstrom.Node
+	seenMsgs  []int
+	neighbors []string
 }
 
 func New(n *maelstrom.Node) MessageManager {
@@ -94,12 +94,21 @@ type BroadcastOkMsgBody struct {
 	Type MsgType `json:"type"`
 }
 
+// TODO: I'm ending up with a ton of broadcast 0 messages. Not sure why.
 func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	body := &BroadcastMsgBody{}
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
-	m.propagateBroadcast(body)
+	for _, node := range m.neighbors {
+		err := m.n.Send(node, body)
+		if err != nil {
+			return err
+		}
+		if node == msg.Src {
+			continue
+		}
+	}
 	m.seenMsgs = append(m.seenMsgs, body.Msg)
 	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
 }
@@ -125,6 +134,8 @@ type ReadOkMsgBody struct {
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
 	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.seenMsgs})
+}
+
 type TopologyBody struct {
 	Topology map[string][]string `json:"topology"`
 	Type     MsgType             `json:"type"`
