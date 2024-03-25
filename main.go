@@ -27,6 +27,7 @@ func main() {
 
 	n.Handle("generate", manager.HandleGenerateId)
 	n.Handle("broadcast", manager.HandleBroadcast)
+	n.Handle("broadcast_ok", manager.HandleBroadcastOk)
 	n.Handle("read", manager.HandleRead)
 	n.Handle("topology", manager.HandleTopology)
 
@@ -38,7 +39,6 @@ func main() {
 type MessageManager struct {
 	n             *maelstrom.Node
 	seenMsgs      []int
-	broadcastMsgs []int
 	neighbors     []string
 }
 
@@ -114,6 +114,10 @@ func (m *MessageManager) propagateBroadcast(body *BroadcastMsgBody) error {
 	return nil
 }
 
+func (m *MessageManager) HandleBroadcastOk(msg maelstrom.Message) error {
+	return nil
+}
+
 type ReadOkMsgBody struct {
 	Type MsgType `json:"type"`
 	Msgs []int   `json:"messages"`
@@ -121,6 +125,9 @@ type ReadOkMsgBody struct {
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
 	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.seenMsgs})
+type TopologyBody struct {
+	Topology map[string][]string `json:"topology"`
+	Type     MsgType             `json:"type"`
 }
 
 type TopologyOkMsgBody struct {
@@ -128,5 +135,21 @@ type TopologyOkMsgBody struct {
 }
 
 func (m *MessageManager) HandleTopology(msg maelstrom.Message) error {
+	if len(m.neighbors) > 0 {
+		// then we've already built the topology
+		return m.n.Reply(msg, &TopologyOkMsgBody{Type: TopologyOk})
+	}
+	self := msg.Dest
+	body := &TopologyBody{}
+	if err := json.Unmarshal(msg.Body, body); err != nil {
+		return err
+	}
+	for node, neighbors := range body.Topology {
+		if node != self {
+			continue
+		}
+		m.neighbors = neighbors
+		break
+	}
 	return m.n.Reply(msg, &TopologyOkMsgBody{Type: TopologyOk})
 }
