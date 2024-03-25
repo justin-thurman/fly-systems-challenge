@@ -37,11 +37,13 @@ func main() {
 
 type MessageManager struct {
 	n             *maelstrom.Node
+	seenMsgs      []int
 	broadcastMsgs []int
+	neighbors     []string
 }
 
 func New(n *maelstrom.Node) MessageManager {
-	return MessageManager{n: n, broadcastMsgs: make([]int, 0)}
+	return MessageManager{n: n, seenMsgs: make([]int, 0)}
 }
 
 type MsgType string
@@ -84,7 +86,8 @@ func (m *MessageManager) HandleGenerateId(msg maelstrom.Message) error {
 }
 
 type BroadcastMsgBody struct {
-	Msg int `json:"message"`
+	Type string `json:"type"`
+	Msg  int    `json:"message"`
 }
 
 type BroadcastOkMsgBody struct {
@@ -96,8 +99,19 @@ func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
-	m.broadcastMsgs = append(m.broadcastMsgs, body.Msg)
+	m.propagateBroadcast(body)
+	m.seenMsgs = append(m.seenMsgs, body.Msg)
 	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
+}
+
+func (m *MessageManager) propagateBroadcast(body *BroadcastMsgBody) error {
+	for _, node := range m.neighbors {
+		err := m.n.Send(node, body)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type ReadOkMsgBody struct {
@@ -106,7 +120,7 @@ type ReadOkMsgBody struct {
 }
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
-	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.broadcastMsgs})
+	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.seenMsgs})
 }
 
 type TopologyOkMsgBody struct {
