@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"strconv"
+	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -30,6 +33,9 @@ func main() {
 	n.Handle("broadcast_ok", manager.HandleBroadcastOk)
 	n.Handle("read", manager.HandleRead)
 	n.Handle("topology", manager.HandleTopology)
+	n.Handle("gossip", manager.HandleGossip)
+
+	go manager.Gossip()
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
@@ -57,6 +63,7 @@ const (
 	ReadOk      MsgType = "read_ok"
 	Topology    MsgType = "topology"
 	TopologyOk  MsgType = "topology_ok"
+	Gossip      MsgType = "gossip"
 )
 
 type GenerateMsgBody struct {
@@ -162,4 +169,30 @@ func (m *MessageManager) HandleTopology(msg maelstrom.Message) error {
 		break
 	}
 	return m.n.Reply(msg, &TopologyOkMsgBody{Type: TopologyOk})
+}
+
+// Implementing recurring gossip event
+type GossipBody struct {
+	Type MsgType `json:"type"`
+	Msgs []int   `json:"msgs"`
+}
+
+func (m *MessageManager) Gossip() error {
+	for {
+		if m.n.ID() == "" {
+			fmt.Fprintln(os.Stderr, "Node not initialized. Waiting...")
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		for _, node := range m.neighbors {
+			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.seenMsgs})
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (m *MessageManager) HandleGossip(msg maelstrom.Message) error {
+	return nil
 }
