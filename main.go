@@ -44,12 +44,20 @@ func main() {
 
 type MessageManager struct {
 	n         *maelstrom.Node
-	seenMsgs  []int
+	seenMsgs  map[int]struct{}
 	neighbors []string
 }
 
 func New(n *maelstrom.Node) MessageManager {
-	return MessageManager{n: n, seenMsgs: make([]int, 0)}
+	return MessageManager{n: n, seenMsgs: make(map[int]struct{})}
+}
+
+func (m *MessageManager) GetMessages() []int {
+	msgs := make([]int, len(m.seenMsgs))
+	for msg := range m.seenMsgs {
+		msgs = append(msgs, msg)
+	}
+	return msgs
 }
 
 type MsgType string
@@ -115,18 +123,10 @@ func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 			return err
 		}
 	}
-	m.seenMsgs = append(m.seenMsgs, body.Msg)
-	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
-}
-
-func (m *MessageManager) propagateBroadcast(body *BroadcastMsgBody) error {
-	for _, node := range m.neighbors {
-		err := m.n.Send(node, body)
-		if err != nil {
-			return err
-		}
+	for msg := range body.Msg {
+		m.seenMsgs[msg] = struct{}{}
 	}
-	return nil
+	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
 }
 
 func (m *MessageManager) HandleBroadcastOk(msg maelstrom.Message) error {
@@ -139,7 +139,7 @@ type ReadOkMsgBody struct {
 }
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
-	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.seenMsgs})
+	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.GetMessages()})
 }
 
 type TopologyBody struct {
@@ -185,7 +185,7 @@ func (m *MessageManager) Gossip() error {
 			continue
 		}
 		for _, node := range m.neighbors {
-			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.seenMsgs})
+			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.GetMessages()})
 			if err != nil {
 				return err
 			}
