@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -31,7 +29,6 @@ func main() {
 
 	n.Handle("generate", manager.HandleGenerateId)
 	n.Handle("broadcast", manager.HandleBroadcast)
-	// n.Handle("broadcast_ok", manager.HandleBroadcastOk)
 	n.Handle("read", manager.HandleRead)
 	n.Handle("topology", manager.HandleTopology)
 	n.Handle("gossip", manager.HandleGossip)
@@ -41,7 +38,6 @@ func main() {
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Fprint(os.Stderr, "Have messages: ", manager.GetMessages())
 }
 
 type MessageManager struct {
@@ -119,25 +115,10 @@ func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
-	//for _, node := range m.neighbors {
-	//	if node == msg.Src {
-	//		continue
-	//	}
-	//	err := m.n.Send(node, body)
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
-	fmt.Fprintln(os.Stderr, "Handling broadcast, have:", m.GetMessages())
 	m.rwLock.Lock()
 	m.seenMsgs[body.Msg] = struct{}{}
 	m.rwLock.Unlock()
-	fmt.Fprintln(os.Stderr, "Finishing broadcast, have:", m.GetMessages())
 	return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
-}
-
-func (m *MessageManager) HandleBroadcastOk(msg maelstrom.Message) error {
-	return nil
 }
 
 type ReadOkMsgBody struct {
@@ -187,11 +168,9 @@ type GossipBody struct {
 func (m *MessageManager) Gossip() error {
 	for {
 		if m.n.ID() == "" {
-			fmt.Fprintln(os.Stderr, "Node not initialized. Waiting...")
 			time.Sleep(300 * time.Millisecond)
 			continue
 		}
-		fmt.Fprintln(os.Stderr, "About to gossip, have:", m.GetMessages())
 		for _, node := range m.neighbors {
 			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.GetMessages()})
 			if err != nil {
@@ -203,7 +182,6 @@ func (m *MessageManager) Gossip() error {
 }
 
 func (m *MessageManager) HandleGossip(msg maelstrom.Message) error {
-	fmt.Fprintln(os.Stderr, "Receiving gossip, have:", m.GetMessages())
 	body := &GossipBody{}
 	if err := json.Unmarshal(msg.Body, body); err != nil {
 		return err
