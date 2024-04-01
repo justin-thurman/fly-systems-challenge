@@ -11,6 +11,9 @@ import (
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
+// PERFORMANCE: before adding message filtering, I was at 766 median latency, 1423 max, 15 msgs/op
+// TODO: I'm successfully populating the `neighborsSeenMsgs` (I think). Now I just need to use it to filter the messages we send
+
 func main() {
 	n := maelstrom.NewNode()
 
@@ -40,15 +43,19 @@ func main() {
 	}
 }
 
+type Set map[int]struct{}
+
+func NewSet() Set { return make(map[int]struct{}) }
+
 type MessageManager struct {
-	n         *maelstrom.Node
-	seenMsgs  map[int]struct{}
-	neighbors []string
-	rwLock    sync.RWMutex
+	n                 *maelstrom.Node
+	seenMsgs          Set
+	neighborsSeenMsgs map[string]Set
+	rwLock            sync.RWMutex
 }
 
 func New(n *maelstrom.Node) MessageManager {
-	return MessageManager{n: n, seenMsgs: make(map[int]struct{})}
+	return MessageManager{n: n, seenMsgs: NewSet(), neighborsSeenMsgs: make(map[string]Set)}
 }
 
 func (m *MessageManager) GetMessages() []int {
@@ -140,7 +147,7 @@ type TopologyOkMsgBody struct {
 }
 
 func (m *MessageManager) HandleTopology(msg maelstrom.Message) error {
-	if len(m.neighbors) > 0 {
+	if len(m.neighborsSeenMsgs) > 0 {
 		// then we've already built the topology
 		return m.n.Reply(msg, &TopologyOkMsgBody{Type: TopologyOk})
 	}
@@ -153,7 +160,9 @@ func (m *MessageManager) HandleTopology(msg maelstrom.Message) error {
 		if node != self {
 			continue
 		}
-		m.neighbors = neighbors
+		for _, neighbor := range neighbors {
+			m.neighborsSeenMsgs[neighbor] = NewSet()
+		}
 		break
 	}
 	return m.n.Reply(msg, &TopologyOkMsgBody{Type: TopologyOk})
@@ -168,16 +177,16 @@ type GossipBody struct {
 func (m *MessageManager) Gossip() error {
 	for {
 		if m.n.ID() == "" {
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		for _, node := range m.neighbors {
+		for node := range m.neighborsSeenMsgs {
 			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.GetMessages()})
 			if err != nil {
 				return err
 			}
 		}
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -188,8 +197,9 @@ func (m *MessageManager) HandleGossip(msg maelstrom.Message) error {
 	}
 	m.rwLock.Lock()
 	defer m.rwLock.Unlock()
-	for _, msg := range body.Msgs {
-		m.seenMsgs[msg] = struct{}{}
+	for _, msgVal := range body.Msgs {
+		m.seenMsgs[msgVal] = struct{}{}
+		m.neighborsSeenMsgs[msg.Src][msgVal] = struct{}{}
 	}
 	return nil
 }
