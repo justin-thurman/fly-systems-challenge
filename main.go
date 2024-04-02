@@ -4,15 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
-
-// PERFORMANCE: before adding message filtering, I was at 766 median latency, 1423 max, 15 msgs/op
-// TODO: I'm successfully populating the `neighborsSeenMsgs` (I think). Now I just need to use it to filter the messages we send
 
 func main() {
 	n := maelstrom.NewNode()
@@ -30,7 +28,7 @@ func main() {
 		return n.Reply(msg, body)
 	})
 
-	n.Handle("generate", manager.HandleGenerateId)
+	// n.Handle("generate", manager.HandleGenerateId)
 	n.Handle("broadcast", manager.HandleBroadcast)
 	n.Handle("read", manager.HandleRead)
 	n.Handle("topology", manager.HandleTopology)
@@ -58,12 +56,33 @@ func New(n *maelstrom.Node) MessageManager {
 	return MessageManager{n: n, seenMsgs: NewSet(), neighborsSeenMsgs: make(map[string]Set)}
 }
 
-func (m *MessageManager) GetMessages() []int {
+func (m *MessageManager) GetAllMessages() []int {
 	m.rwLock.RLock()
 	defer m.rwLock.RUnlock()
 	msgs := make([]int, 0, len(m.seenMsgs))
 	for msg := range m.seenMsgs {
 		msgs = append(msgs, msg)
+	}
+	return msgs
+}
+
+func (m *MessageManager) GetMessages(nodesNeighborSeen Set) []int {
+	m.rwLock.RLock()
+	defer m.rwLock.RUnlock()
+	msgs := make([]int, 0, len(m.seenMsgs))
+	for msg := range m.seenMsgs {
+		_, neighborHasSeen := nodesNeighborSeen[msg]
+		shouldSendMsg := !neighborHasSeen
+		if neighborHasSeen {
+			randInt := rand.Intn(10)
+			if randInt > 6 {
+				// Send 30% of all seen messages
+				shouldSendMsg = true
+			}
+		}
+		if shouldSendMsg {
+			msgs = append(msgs, msg)
+		}
 	}
 	return msgs
 }
@@ -122,6 +141,12 @@ func (m *MessageManager) HandleBroadcast(msg maelstrom.Message) error {
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
+	m.rwLock.RLock()
+	if _, exists := m.seenMsgs[body.Msg]; exists {
+		m.rwLock.RUnlock()
+		return m.n.Reply(msg, &BroadcastOkMsgBody{Type: BroadcastOk})
+	}
+	m.rwLock.RUnlock()
 	m.rwLock.Lock()
 	m.seenMsgs[body.Msg] = struct{}{}
 	m.rwLock.Unlock()
@@ -134,7 +159,7 @@ type ReadOkMsgBody struct {
 }
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
-	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.GetMessages()})
+	return m.n.Reply(msg, &ReadOkMsgBody{Type: ReadOk, Msgs: m.GetAllMessages()})
 }
 
 type TopologyBody struct {
@@ -176,17 +201,13 @@ type GossipBody struct {
 
 func (m *MessageManager) Gossip() error {
 	for {
-		if m.n.ID() == "" {
-			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-		for node := range m.neighborsSeenMsgs {
-			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.GetMessages()})
+		for node, nodesNeighborSeen := range m.neighborsSeenMsgs {
+			err := m.n.Send(node, &GossipBody{Type: Gossip, Msgs: m.GetMessages(nodesNeighborSeen)})
 			if err != nil {
 				return err
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
