@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
@@ -20,11 +21,13 @@ func main() {
 }
 
 type MessageManager struct {
-	n *maelstrom.Node
+	n  *maelstrom.Node
+	kv *maelstrom.KV
 }
 
 func New(n *maelstrom.Node) MessageManager {
-	return MessageManager{n: n}
+	manager := MessageManager{n: n, kv: maelstrom.NewSeqKV(n)}
+	manager.kv.Write // TODO: set up context stuff; probably need a Background() context to kick things off
 }
 
 type MsgType string
@@ -51,6 +54,10 @@ type ReadOkBody struct {
 }
 
 func (m *MessageManager) HandleAdd(msg maelstrom.Message) error {
+	body := &AddBody{}
+	if err := json.Unmarshal(msg.Body, body); err != nil {
+		return err
+	}
 	return nil
 }
 
