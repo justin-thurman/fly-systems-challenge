@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -12,6 +14,7 @@ func main() {
 
 	manager := New(n)
 
+	n.Handle("init", manager.HandleInit)
 	n.Handle("add", manager.HandleAdd)
 	n.Handle("read", manager.HandleRead)
 
@@ -21,13 +24,25 @@ func main() {
 }
 
 type MessageManager struct {
-	n  *maelstrom.Node
-	kv *maelstrom.KV
+	n *maelstrom.Node
+	*maelstrom.KV
+	key        string
+	currentVal int
 }
 
-func New(n *maelstrom.Node) MessageManager {
-	manager := MessageManager{n: n, kv: maelstrom.NewSeqKV(n)}
-	manager.kv.Write // TODO: set up context stuff; probably need a Background() context to kick things off
+func New(n *maelstrom.Node) *MessageManager {
+	manager := &MessageManager{n: n, KV: maelstrom.NewSeqKV(n)}
+	return manager
+}
+
+func (m *MessageManager) HandleInit(_ maelstrom.Message) error {
+	m.key = "key"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := m.CompareAndSwap(ctx, m.key, 0, 0, true); err != nil {
+		return nil
+	}
+	return nil
 }
 
 type MsgType string
@@ -53,14 +68,45 @@ type ReadOkBody struct {
 	Value int     `json:"value"`
 }
 
+func (m *MessageManager) readValue() (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	val, err := m.ReadInt(ctx, m.key)
+	if err != nil {
+		return 0, err
+	}
+	return val, nil
+}
+
 func (m *MessageManager) HandleAdd(msg maelstrom.Message) error {
 	body := &AddBody{}
 	if err := json.Unmarshal(msg.Body, body); err != nil {
 		return err
 	}
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for {
+		updatedVal := m.currentVal + body.Delta
+		err := m.CompareAndSwap(ctx, m.key, m.currentVal, updatedVal, true)
+		if err != nil {
+			currentVal, err := m.readValue()
+			if err != nil {
+				return err
+			}
+			m.currentVal = currentVal
+		} else {
+			m.currentVal = updatedVal
+			break
+		}
+	}
+	return m.n.Reply(msg, AddOkBody{Type: AddOk})
 }
 
 func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
-	return nil
+	val, err := m.readValue()
+	if err != nil {
+		return err
+	}
+	m.currentVal = val
+	return m.n.Reply(msg, ReadOkBody{Type: ReadOk, Value: val})
 }
