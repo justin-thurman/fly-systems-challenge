@@ -73,7 +73,7 @@ func (m *MessageManager) readValue() (int, error) {
 	defer cancel()
 	val, err := m.ReadInt(ctx, m.key)
 	if err != nil {
-		return 0, err
+		log.Fatal(err)
 	}
 	return val, nil
 }
@@ -83,19 +83,19 @@ func (m *MessageManager) HandleAdd(msg maelstrom.Message) error {
 	if err := json.Unmarshal(msg.Body, body); err != nil {
 		return err
 	}
+	if body.Delta == 0 {
+		return m.n.Reply(msg, AddOkBody{Type: AddOk})
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	for {
-		updatedVal := m.currentVal + body.Delta
-		err := m.CompareAndSwap(ctx, m.key, m.currentVal, updatedVal, true)
+		currentVal, err := m.readValue()
 		if err != nil {
-			currentVal, err := m.readValue()
-			if err != nil {
-				return err
-			}
-			m.currentVal = currentVal
-		} else {
-			m.currentVal = updatedVal
+			return err
+		}
+		updatedVal := currentVal + body.Delta
+		err = m.CompareAndSwap(ctx, m.key, currentVal, updatedVal, true)
+		if err == nil {
 			break
 		}
 	}
@@ -107,6 +107,6 @@ func (m *MessageManager) HandleRead(msg maelstrom.Message) error {
 	if err != nil {
 		return err
 	}
-	m.currentVal = val
+	// m.currentVal = val
 	return m.n.Reply(msg, ReadOkBody{Type: ReadOk, Value: val})
 }
